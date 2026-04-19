@@ -39,6 +39,7 @@ git checkout -b your-branch-name / git checkout your-branch-name<br>
 
 
 # File Structure
+统一的参数配置文件在config/config.py
 
 ```text
 project/
