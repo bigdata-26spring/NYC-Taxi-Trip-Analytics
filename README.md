@@ -1,15 +1,15 @@
 # NYC-Taxi-Trip-Analytics
 A scalable big data project for NYC taxi trip analytics and demand forecasting using PySpark, Parquet, and spatial-temporal analysis.
 
-# ==================================================
+
 # Reminder
-# ==================================================
+
 When developing, do not push code directly to the main branch.
 Everyone should develop and commit changes on a branch named after themselves, then create a pull request to merge into the main branch.
 The main branch should remain as stable and functional as possible.
 
 1. 本地克隆仓库:
-git clone [仓库地址](https://github.com/bigdata-26spring/NYC-Taxi-Trip-Analytics.git)
+git clone [仓库地址]
 cd NYC-Taxi-Trip-Analytics
 
 2. 创建自己的分支:
@@ -37,9 +37,10 @@ git checkout -b your-branch-name / git checkout your-branch-name
 
 
 
-# ==================================================
+
 # File Structure
-# ==================================================
+
+```text
 project/
   README.md
 
@@ -109,12 +110,13 @@ Contains scripts for generating visual outputs and dashboards.
 Stores final generated figures, result tables, and prediction outputs.
 `documents/:`
 Stores final project deliverables such as the written report and presentation slides.
+```
 
 
 
-# ==================================================
 # Data Flow
-# ==================================================
+
+```text
 data/raw/*.parquet
         ↓
 src/ingestion/load_raw_data.py
@@ -130,12 +132,12 @@ src/features/build_zone_hour_features.py
 data/processed/zone_hour_features/     （聚合后的 parquet）
         ↓
 analytics / forecasting scripts
+```
 
 
 
-# ==================================================
 # Stage1 - Ingestion
-# ==================================================
+
 ## 数据集包括：
 Yellow Taxi Trip Records（PARQUET）
 Taxi Zone Lookup Table（CSV）
@@ -245,30 +247,30 @@ At this stage, the data ingestion layer has achieved the following:
 - confirmed the availability of key temporal, spatial, and fare-related columns,
 - established the foundation for downstream cleaning, feature engineering, analysis, and forecasting tasks.
 
-# ==================================================
+
 # Stage2 - Cleaning
-# ==================================================
 
 
 
-# ==================================================
+
+
 # Stage3 - Feature 
-# ==================================================
 
 
 
-# ==================================================
+
+
 # Stage4 - Temporal + Analytics
-# ==================================================
 
 
 
-# ==================================================
+
+
 # Stage5 - Forecasting
-# ==================================================
 
 
 
-# ==================================================
+
+
 # Stage6 - Visualization
-# ==================================================
+
