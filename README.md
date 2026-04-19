@@ -168,14 +168,11 @@ clean_trips.py 里直接 import：from src.ingestion.load_raw_data import load_r
 Step 1：导入 config 和 ingestion 逻辑<br>
 from config.config import CLEANED_TRIPS_PATH, CLEANING_APP_NAME<br>
 from src.ingestion.load_raw_data import create_spark_session, load_raw_trips<br>
-
 Step 2：重新读 raw 数据<br>
 spark = create_spark_session(CLEANING_APP_NAME)<br>
 raw_trips_df = load_raw_trips(spark)<br>
-
 Step 3：做 cleaning<br>
 cleaned_df = ...<br>
-
 Step 4：写到 processed<br>
 cleaned_df.write.mode("overwrite").parquet(CLEANED_TRIPS_PATH)<br>
 
