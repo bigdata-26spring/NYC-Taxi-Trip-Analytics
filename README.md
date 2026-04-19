@@ -138,6 +138,7 @@ analytics / forecasting scripts
 ## 数据集包括：
 - Yellow Taxi Trip Records（PARQUET）<br>
 - Taxi Zone Lookup Table（CSV）<br>
+
 Yellow有上下车时间、位置、距离、费用、支付方式、乘客数这些字段；<br>
 lookup table 用来把 LocationID 映射到 zone 和 borough做空间分析（除了 lookup csv，如果想做地图热力图，官网也提供：Taxi Zone Shapefile）；<br><br>
 
