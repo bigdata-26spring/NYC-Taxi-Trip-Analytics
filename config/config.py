@@ -59,7 +59,7 @@ LOOKUP_PATH = str(LOOKUP_DIR / "taxi_zone_lookup.csv")
 
 # 清洗后的标准化 trip 数据
 CLEANED_TRIPS_PATH = str(PROCESSED_DIR / "cleaned_trips")
-
+CLEANING_REPORT_PATH = str(PROCESSED_DIR / "cleaning" / "cleaning_report.txt")
 # join 了 zone lookup 之后的 enriched trip 数据
 TRIP_ENRICHED_PATH = str(PROCESSED_DIR / "trip_enriched")
 
