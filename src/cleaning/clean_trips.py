@@ -27,6 +27,35 @@ from src.ingestion.load_raw_data import (
     load_zone_lookup,
 )
 
+def select_needed_columns(df: DataFrame) -> DataFrame:
+    if "Airport_fee" in df.columns and "airport_fee" not in df.columns:
+        df = df.withColumnRenamed("Airport_fee", "airport_fee")
+
+    needed_cols = [
+        PICKUP_TIME_COL,
+        DROPOFF_TIME_COL,
+        PICKUP_ID_COL,
+        DROPOFF_ID_COL,
+        TRIP_DISTANCE_COL,
+        PASSENGER_COUNT_COL,
+        FARE_AMOUNT_COL,
+        TOTAL_AMOUNT_COL,
+        "VendorID",
+        "RatecodeID",
+        "store_and_fwd_flag",
+        "payment_type",
+        "tip_amount",
+        "tolls_amount",
+        "airport_fee",
+        "extra",
+        "mta_tax",
+        "improvement_surcharge",
+        "congestion_surcharge",
+    ]
+
+    existing_cols = [c for c in needed_cols if c in df.columns]
+    return df.select(*existing_cols)
+
 
 def standardize_columns(df: DataFrame) -> DataFrame:
     """
@@ -92,31 +121,25 @@ def remove_numeric_invalid(df: DataFrame) -> DataFrame:
 def remove_invalid_location_ids(df: DataFrame, zones_df: DataFrame) -> DataFrame:
     """
     Keep only rows whose pickup and dropoff location IDs exist in the zone lookup table.
+    Use a small Python list instead of two joins to reduce local Spark memory usage.
     """
-    valid_zone_ids = zones_df.select(F.col(ZONE_LOOKUP_ID_COL).cast("int").alias("valid_location_id")).distinct()
+    valid_zone_ids = [
+        int(row[ZONE_LOOKUP_ID_COL])
+        for row in zones_df.select(F.col(ZONE_LOOKUP_ID_COL).cast("int"))
+                           .dropna()
+                           .distinct()
+                           .collect()
+    ]
 
-    df = (
+    return (
         df
-        .join(
-            valid_zone_ids.withColumnRenamed("valid_location_id", "valid_pu_id"),
-            df[PICKUP_ID_COL] == F.col("valid_pu_id"),
-            how="inner",
-        )
-        .join(
-            valid_zone_ids.withColumnRenamed("valid_location_id", "valid_do_id"),
-            df[DROPOFF_ID_COL] == F.col("valid_do_id"),
-            how="inner",
-        )
-        .drop("valid_pu_id", "valid_do_id")
+        .filter(F.col(PICKUP_ID_COL).isin(valid_zone_ids))
+        .filter(F.col(DROPOFF_ID_COL).isin(valid_zone_ids))
     )
 
-    return df
 
-
+## 和stage4不同 可能要考虑是不是不用去重
 def remove_duplicates(df: DataFrame) -> DataFrame:
-    """
-    Remove obvious duplicate rows.
-    """
     return df.dropDuplicates()
 
 
@@ -197,10 +220,12 @@ def write_report_file(content: str, output_path: str) -> None:
 #     return df, report
 
 def clean_trips(df: DataFrame, zones_df: DataFrame):
-    DEBUG = True
+    DEBUG = False
+
     if DEBUG:
         df = df.sample(0.01)
 
+    df = select_needed_columns(df)
     df = standardize_columns(df)
     df = remove_null_and_time_invalid(df)
     df = remove_numeric_invalid(df)
@@ -209,6 +234,7 @@ def clean_trips(df: DataFrame, zones_df: DataFrame):
 
     report = build_cleaning_report()
     return df, report
+
 def main() -> None:
     spark = create_spark_session(CLEANING_APP_NAME)
 
@@ -217,7 +243,7 @@ def main() -> None:
 
     cleaned_df, report = clean_trips(raw_trips_df, zones_df)
 
-    cleaned_df = cleaned_df.coalesce(1)
+    cleaned_df = cleaned_df.coalesce(12)
     cleaned_df.write.mode("overwrite").parquet(CLEANED_TRIPS_PATH)
     write_report_file(report, CLEANING_REPORT_PATH)
 

@@ -23,11 +23,24 @@ from config.config import (
 )
 
 
+# def create_spark_session(app_name: str = INGESTION_APP_NAME) -> SparkSession:
+#     """
+#     Create and return a SparkSession for the ingestion step.
+#     """
+#     return SparkSession.builder.appName(app_name).getOrCreate()
+
 def create_spark_session(app_name: str = INGESTION_APP_NAME) -> SparkSession:
-    """
-    Create and return a SparkSession for the ingestion step.
-    """
-    return SparkSession.builder.appName(app_name).getOrCreate()
+    return (
+        SparkSession.builder
+        .appName(app_name)
+        .master("local[*]")
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
+        .config("spark.sql.shuffle.partitions", "8")
+        .config("spark.default.parallelism", "8")
+        .getOrCreate()
+    )
+
 
 
 def get_parquet_file_paths(raw_data_dir: Path) -> list[str]:

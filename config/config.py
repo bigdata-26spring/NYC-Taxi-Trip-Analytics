@@ -63,8 +63,14 @@ CLEANING_REPORT_PATH = str(PROCESSED_DIR / "cleaning" / "cleaning_report.txt")
 # join 了 zone lookup 之后的 enriched trip 数据
 TRIP_ENRICHED_PATH = str(PROCESSED_DIR / "trip_enriched")
 
+TOP_ROUTES_PATH = str(PROCESSED_DIR / "top_routes")
+
 # 最关键的中间核心表：zone-hour aggregation/features table
 ZONE_HOUR_FEATURES_PATH = str(PROCESSED_DIR / "zone_hour_features")
+
+ZONE_DAILY_FEATURES_PATH = str(PROCESSED_DIR / "zone_daily_features")
+
+BOROUGH_HOUR_FEATURES_PATH = str(PROCESSED_DIR / "borough_hour_features")
 
 # ingestion 阶段生成的 summary 文本文件
 # 用来记录 schema、row count、sample rows 等信息
