@@ -820,3 +820,26 @@ outputs/figures/model_comparison.png
 
 # Stage6 - Visualization
 
+Stage 6 is implemented under `src/visualization/`.
+
+It builds a D3 dashboard from the Stage 4 CSV outputs and the Stage 3 top-routes
+sample table. Stage 5 forecasting output is optional for now; when it is ready,
+place a forecast CSV under `outputs/predictions/forecast_demand.csv` with:
+
+```text
+pickup_date,hour,pickup_zone,actual_trip_count,predicted_trip_count
+```
+
+Run from the project root:
+
+```bash
+python src/visualization/prepare_dashboard_data.py
+python -m http.server 8000 --directory src/visualization/dashboard
+```
+
+Open:
+
+```text
+http://localhost:8000/
+```
+

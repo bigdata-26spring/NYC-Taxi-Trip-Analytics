@@ -8,6 +8,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from tqdm.auto import tqdm
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +25,11 @@ TABLE_DIR = PROJECT_ROOT / "outputs" / "tables"
 FIGURE_DIR = PROJECT_ROOT / "outputs" / "figures"
 
 PREDICTION_OUTPUT_PATH = PREDICTION_DIR / "forecast_predictions.csv"
+DAILY_FORECAST_OUTPUT_PATH = PREDICTION_DIR / "forecast_daily_actual_predicted.csv"
+ERROR_BY_HOUR_OUTPUT_PATH = PREDICTION_DIR / "forecast_error_by_hour.csv"
+ERROR_BY_BOROUGH_OUTPUT_PATH = PREDICTION_DIR / "forecast_error_by_borough.csv"
+ZONE_ACCURACY_OUTPUT_PATH = PREDICTION_DIR / "forecast_zone_accuracy.csv"
+WEEKDAY_HOUR_ERROR_OUTPUT_PATH = PREDICTION_DIR / "forecast_weekday_hour_error_heatmap.csv"
 METRICS_OUTPUT_PATH = TABLE_DIR / "model_evaluation_metrics.csv"
 
 TARGET_COL = "trip_count"
@@ -75,6 +81,49 @@ def evaluate_single_model(model_name, model_path, X_eval, y_eval):
     }
 
 
+def add_aggregate_error_columns(df):
+    df["prediction_error"] = df["trip_count"] - df["predicted_trip_count"]
+    df["absolute_error"] = df["prediction_error"].abs()
+    df["absolute_percentage_error"] = (
+        df["absolute_error"] / df["trip_count"].where(df["trip_count"] != 0)
+    ) * 100
+    return df
+
+
+def build_error_summary(df, group_cols):
+    work_df = df.copy()
+    work_df["squared_error"] = work_df["prediction_error"] ** 2
+    work_df["absolute_percentage_error"] = (
+        work_df["absolute_error"] / work_df["trip_count"].where(work_df["trip_count"] != 0)
+    ) * 100
+
+    summary_df = (
+        work_df.groupby(group_cols, dropna=False)
+        .agg(
+            records=("trip_count", "size"),
+            actual_trip_count=("trip_count", "sum"),
+            predicted_trip_count=("predicted_trip_count", "sum"),
+            mean_error=("prediction_error", "mean"),
+            mae=("absolute_error", "mean"),
+            rmse=("squared_error", lambda values: values.mean() ** 0.5),
+            mape=("absolute_percentage_error", "mean"),
+            total_absolute_error=("absolute_error", "sum"),
+        )
+        .reset_index()
+    )
+
+    summary_df["aggregate_error"] = (
+        summary_df["actual_trip_count"] - summary_df["predicted_trip_count"]
+    )
+    summary_df["aggregate_absolute_error"] = summary_df["aggregate_error"].abs()
+    summary_df["aggregate_absolute_percentage_error"] = (
+        summary_df["aggregate_absolute_error"]
+        / summary_df["actual_trip_count"].where(summary_df["actual_trip_count"] != 0)
+    ) * 100
+
+    return summary_df
+
+
 def main():
     PREDICTION_DIR.mkdir(parents=True, exist_ok=True)
     TABLE_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,7 +149,9 @@ def main():
     }
 
     results = []
-    for model_name, model_path in model_paths.items():
+    model_progress = tqdm(model_paths.items(), total=len(model_paths), desc="Evaluating models", unit="model")
+    for model_name, model_path in model_progress:
+        model_progress.set_postfix(model=model_name)
         results.append(evaluate_single_model(model_name, model_path, X_eval, y_eval))
 
     metrics_rows = []
@@ -131,6 +182,17 @@ def main():
     eval_df["predicted_trip_count"] = best_pred
     eval_df["prediction_error"] = eval_df["trip_count"] - eval_df["predicted_trip_count"]
     eval_df["absolute_error"] = eval_df["prediction_error"].abs()
+    eval_df["weekday_name"] = eval_df["day_of_week"].map(
+        {
+            1: "Sun",
+            2: "Mon",
+            3: "Tue",
+            4: "Wed",
+            5: "Thu",
+            6: "Fri",
+            7: "Sat",
+        }
+    )
 
     prediction_cols = [
         "pickup_date",
@@ -147,13 +209,17 @@ def main():
         "absolute_error",
     ]
 
+    output_steps = tqdm(total=13, desc="Writing evaluation outputs", unit="step")
+
     eval_df[prediction_cols].to_csv(PREDICTION_OUTPUT_PATH, index=False)
     print(f"Prediction table saved to: {PREDICTION_OUTPUT_PATH}")
+    output_steps.update(1)
 
     eval_df[prediction_cols].to_csv(
         PREDICTION_DIR / "plot_actual_vs_predicted_hourly.csv",
         index=False,
     )
+    output_steps.update(1)
 
     monthly_plot_df = eval_df.copy()
     monthly_plot_df["year_month"] = monthly_plot_df["pickup_date"].dt.to_period("M").astype(str)
@@ -169,6 +235,44 @@ def main():
         PREDICTION_DIR / "plot_actual_vs_predicted_monthly.csv",
         index=False,
     )
+    output_steps.update(1)
+
+    daily_forecast_df = (
+        eval_df.groupby(["pickup_date", "year", "month", "day"])[
+            ["trip_count", "predicted_trip_count"]
+        ]
+        .sum()
+        .reset_index()
+        .sort_values("pickup_date")
+    )
+    daily_forecast_df = add_aggregate_error_columns(daily_forecast_df)
+    daily_forecast_df.to_csv(DAILY_FORECAST_OUTPUT_PATH, index=False)
+    output_steps.update(1)
+
+    error_by_hour_df = build_error_summary(eval_df, ["hour"]).sort_values("hour")
+    error_by_hour_df.to_csv(ERROR_BY_HOUR_OUTPUT_PATH, index=False)
+    output_steps.update(1)
+
+    error_by_borough_df = build_error_summary(eval_df, ["pickup_borough"]).sort_values(
+        "aggregate_absolute_error",
+        ascending=False,
+    )
+    error_by_borough_df.to_csv(ERROR_BY_BOROUGH_OUTPUT_PATH, index=False)
+    output_steps.update(1)
+
+    zone_accuracy_df = build_error_summary(
+        eval_df,
+        ["PULocationID", "pickup_zone", "pickup_borough"],
+    ).sort_values("aggregate_absolute_error", ascending=False)
+    zone_accuracy_df.to_csv(ZONE_ACCURACY_OUTPUT_PATH, index=False)
+    output_steps.update(1)
+
+    weekday_hour_error_df = build_error_summary(
+        eval_df,
+        ["day_of_week", "weekday_name", "hour"],
+    ).sort_values(["day_of_week", "hour"])
+    weekday_hour_error_df.to_csv(WEEKDAY_HOUR_ERROR_OUTPUT_PATH, index=False)
+    output_steps.update(1)
 
     error_series = eval_df["prediction_error"].dropna()
     low = error_series.quantile(0.01)
@@ -184,6 +288,7 @@ def main():
         PREDICTION_DIR / "plot_model_comparison.csv",
         index=False,
     )
+    output_steps.update(1)
 
     plt.figure(figsize=(8, 6))
     plt.scatter(y_eval, best_pred, alpha=0.25)
@@ -198,6 +303,7 @@ def main():
     plt.tight_layout()
     plt.savefig(FIGURE_DIR / "actual_vs_predicted_scatter.png", dpi=300)
     plt.close()
+    output_steps.update(1)
 
     plt.figure(figsize=(14, 6))
     plt.plot(
@@ -221,6 +327,7 @@ def main():
     plt.tight_layout()
     plt.savefig(FIGURE_DIR / "actual_vs_predicted_monthly_curve.png", dpi=300)
     plt.close()
+    output_steps.update(1)
 
     plt.figure(figsize=(8, 6))
     plt.hist(clipped_errors, bins=60)
@@ -230,6 +337,7 @@ def main():
     plt.tight_layout()
     plt.savefig(FIGURE_DIR / "prediction_error_distribution.png", dpi=300)
     plt.close()
+    output_steps.update(1)
 
     plt.figure(figsize=(8, 6))
     plt.bar(metrics_df["model"], metrics_df["RMSE"])
@@ -240,6 +348,8 @@ def main():
     plt.tight_layout()
     plt.savefig(FIGURE_DIR / "model_comparison.png", dpi=300)
     plt.close()
+    output_steps.update(1)
+    output_steps.close()
 
     print("\nEvaluation completed.")
     print(f"Best model: {best_model_name}")

@@ -218,6 +218,29 @@ def export_sample_csv(zone_daily_df: DataFrame) -> None:
         print(f"\nSkipping sample CSV export: {e}")
 
 
+def export_full_csv(zone_daily_df: DataFrame) -> None:
+    """
+    Export the full zone_daily_features table as CSV for D3 / frontend use.
+
+    Note:
+    Spark writes CSV as a directory containing part-*.csv files,
+    not as a single CSV file by default.
+    """
+    csv_output_path = TABLES_DIR / "zone_daily_features_csv"
+
+    TABLES_DIR.mkdir(parents=True, exist_ok=True)
+
+    (
+        zone_daily_df
+        .write
+        .mode("overwrite")
+        .option("header", True)
+        .csv(str(csv_output_path))
+    )
+
+    print(f"\nFull CSV saved to: {csv_output_path}")
+
+
 def main() -> None:
     spark = create_spark_session(FEATURE_APP_NAME)
 
@@ -228,13 +251,15 @@ def main() -> None:
     print("\n===== zone_daily_features schema =====")
     zone_daily_df.printSchema()
 
-    print("\n===== zone_daily_features preview =====")
-    zone_daily_df.show(30, truncate=False)
+    # print("\n===== zone_daily_features preview =====")
+    # zone_daily_df.show(30, truncate=False)
 
     zone_daily_df.write.mode("overwrite").parquet(ZONE_DAILY_FEATURES_PATH)
     print(f"\nzone_daily_features saved to: {ZONE_DAILY_FEATURES_PATH}")
 
-    export_sample_csv(zone_daily_df)
+    # export_sample_csv(zone_daily_df)
+    zone_daily_export_df = spark.read.parquet(ZONE_DAILY_FEATURES_PATH)
+    export_full_csv(zone_daily_export_df)
 
     spark.stop()
 

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NYC Taxi Trip Analytics Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/d3@7" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="title-block">
+        <p class="eyebrow">Stage 6 Visualization</p>
+        <h1>NYC Taxi Trip Analytics</h1>
+      </div>
+      <div class="header-controls" aria-label="Dashboard controls">
+        <label>
+          <span>Date window</span>
+          <select id="dateScope"></select>
+        </label>
+        <label>
+          <span>Daily metric</span>
+          <select id="dailyMetric">
+            <option value="total_trips">Trips</option>
+            <option value="total_revenue">Revenue</option>
+            <option value="avg_revenue_per_trip">Revenue per trip</option>
+            <option value="avg_trip_distance">Distance per trip</option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <main>
+      <section class="kpi-grid" id="kpiGrid" aria-label="Key performance indicators"></section>
+
+      <section class="dashboard-grid">
+        <article class="panel panel-wide">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Temporal</p>
+              <h2>Daily Demand Trend</h2>
+            </div>
+          </div>
+          <div class="chart chart-tall" id="dailyTrend"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Temporal</p>
+              <h2>Hourly Demand</h2>
+            </div>
+          </div>
+          <div class="chart" id="hourlyDemand"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Spatial</p>
+              <h2>Top Pickup Zones</h2>
+            </div>
+          </div>
+          <div class="chart" id="topZones"></div>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Spatiotemporal</p>
+              <h2>Weekday and Hour Heatmap</h2>
+            </div>
+          </div>
+          <div class="chart chart-tall" id="weekdayHeatmap"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Borough</p>
+              <h2>Hourly Pattern</h2>
+            </div>
+          </div>
+          <div class="chart" id="boroughPattern"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Temporal</p>
+              <h2>Rush Hour Summary</h2>
+            </div>
+          </div>
+          <div class="chart" id="rushHour"></div>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Stage 5</p>
+              <h2>Actual vs Forecast</h2>
+            </div>
+            <span class="status-pill" id="forecastStatus">Waiting for data</span>
+          </div>
+          <div class="chart" id="forecastChart"></div>
+        </article>
+
+        <article class="panel panel-wide">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Routes</p>
+              <h2>Most Common Pickup to Dropoff Routes</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Route</th>
+                  <th>Trips</th>
+                  <th>Avg miles</th>
+                  <th>Avg minutes</th>
+                  <th>Revenue</th>
+                </tr>
+              </thead>
+              <tbody id="routesTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

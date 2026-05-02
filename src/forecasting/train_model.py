@@ -10,6 +10,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from tqdm.auto import tqdm
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -114,7 +115,9 @@ def main():
     best_rmse = float("inf")
     best_pipeline = None
 
-    for model_name, model in models.items():
+    model_progress = tqdm(models.items(), total=len(models), desc="Training models", unit="model")
+    for model_name, model in model_progress:
+        model_progress.set_postfix(model=model_name)
         print(f"\nTraining model: {model_name}")
 
         pipeline = Pipeline(
