@@ -8,6 +8,8 @@ The online app does not run Spark jobs or train models. Heavy data processing is
 done offline first, then curated dashboard-ready tables are exported to MongoDB
 Atlas and served through the API.
 
+app link:[NYC Taxi Trip Analytics](https://nyc-taxi-trip-analytics.vercel.app)
+
 ## Architecture
 
 ```text
