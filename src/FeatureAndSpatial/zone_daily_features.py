@@ -174,8 +174,6 @@ def export_sample_csv(zone_daily_df: DataFrame) -> None:
     Export a small readable CSV sample for teammates / quick inspection.
     """
     try:
-        import pandas as pd
-
         TABLES_DIR.mkdir(parents=True, exist_ok=True)
 
         sample_pdf = (
@@ -221,10 +219,6 @@ def export_sample_csv(zone_daily_df: DataFrame) -> None:
 def export_full_csv(zone_daily_df: DataFrame) -> None:
     """
     Export the full zone_daily_features table as CSV for D3 / frontend use.
-
-    Note:
-    Spark writes CSV as a directory containing part-*.csv files,
-    not as a single CSV file by default.
     """
     csv_output_path = TABLES_DIR / "zone_daily_features_csv"
 

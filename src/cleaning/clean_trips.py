@@ -154,29 +154,6 @@ def remove_out_of_target_date_range(df: DataFrame) -> DataFrame:
 def remove_duplicates(df: DataFrame) -> DataFrame:
     return df.dropDuplicates()
 
-
-# def build_cleaning_report(
-#     raw_count: int,
-#     after_standardize_count: int,
-#     after_null_time_count: int,
-#     after_numeric_count: int,
-#     after_location_count: int,
-#     final_count: int,
-# ) -> str:
-#     """
-#     Build a detailed cleaning report.
-#     """
-#     return (
-#         "===== Cleaning Report =====\n"
-#         f"Raw row count: {raw_count}\n"
-#         f"After standardization: {after_standardize_count}\n"
-#         f"After null/time filtering: {after_null_time_count}\n"
-#         f"After numeric filtering: {after_numeric_count}\n"
-#         f"After location ID validation: {after_location_count}\n"
-#         f"Final cleaned row count: {final_count}\n"
-#         f"Removed row count: {raw_count - final_count}\n"
-#         f"Removal ratio: {((raw_count - final_count) / raw_count):.2%}\n"
-#     )
 def build_cleaning_report() -> str:
     return (
         "===== Cleaning Report =====\n"
@@ -195,55 +172,6 @@ def write_report_file(content: str, output_path: str, spark=None) -> None:
     Save the cleaning report to a text file.
     """
     write_text_file(content, output_path, spark)
-
-
-# def clean_trips(df: DataFrame, zones_df: DataFrame):
-#     """
-#     Main cleaning pipeline with step-by-step counts.
-#     """
-#     raw_count = df.count()
-
-#     df = standardize_columns(df)
-#     #after_standardize_count = df.count()
-
-#     df = remove_null_and_time_invalid(df)
-#     #after_null_time_count = df.count()
-
-#     df = remove_numeric_invalid(df)
-#     #after_numeric_count = df.count()
-
-#     df = remove_invalid_location_ids(df, zones_df)
-#     #after_location_count = df.count()
-
-#     df = remove_duplicates(df)
-#     final_count = df.count()
-
-#     report = build_cleaning_report(
-#         raw_count=raw_count,
-#         after_standardize_count=after_standardize_count,
-#         after_null_time_count=after_null_time_count,
-#         after_numeric_count=after_numeric_count,
-#         after_location_count=after_location_count,
-#         final_count=final_count,
-#     )
-
-#     return df, report
-
-# def clean_trips(df: DataFrame, zones_df: DataFrame):
-#     DEBUG = False
-
-#     if DEBUG:
-#         df = df.sample(0.01)
-
-#     df = select_needed_columns(df)
-#     df = standardize_columns(df)
-#     df = remove_null_and_time_invalid(df)
-#     df = remove_numeric_invalid(df)
-#     df = remove_invalid_location_ids(df, zones_df)
-#     df = remove_duplicates(df)
-
-#     report = build_cleaning_report()
-#     return df, report
 
 def clean_trips(df: DataFrame, zones_df: DataFrame):
     DEBUG = False

@@ -84,9 +84,6 @@ def get_remote_parquet_file_paths(spark: SparkSession, raw_data_dir: str) -> lis
 def get_parquet_file_paths(raw_data_dir: str | Path, spark: SparkSession | None = None) -> list[str]:
     """
     Find all parquet files under data/raw/.
-
-    We use Python's glob instead of passing '*.parquet' directly into Spark.
-    This avoids the noisy metadata warning seen with wildcard paths.
     """
     if is_remote_path(raw_data_dir):
         if spark is None:
@@ -101,8 +98,7 @@ def normalize_trip_schema(df: DataFrame) -> DataFrame:
     Normalize important columns to a canonical schema.
 
     This is necessary because different monthly TLC parquet files may store
-    some columns with slightly different types. For example, passenger_count
-    may be INT64 in one file and be inferred differently in another.
+    some columns with slightly different types.
     """
     cast_map = {
         PASSENGER_COUNT_COL: "double",

@@ -15,7 +15,7 @@ The backend reads MongoDB settings from the project-root `.env` file or from
 environment variables:
 
 ```text
-MONGODB_URI=mongodb+srv://user_1:<password>@nyctaxitrip.fhkn7x7.mongodb.net/?appName=NYCTaxiTrip
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster-url>/?retryWrites=true&w=majority
 MONGODB_DB=nyc_taxi_analytics
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```

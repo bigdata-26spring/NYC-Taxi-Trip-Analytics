@@ -1,20 +1,520 @@
-# NYC-Taxi-Trip-Analytics
-A scalable big data project for NYC taxi trip analytics and demand forecasting using PySpark, Parquet, and spatial-temporal analysis.
+# NYC Taxi Trip Analytics
 
-## Production Scalability / Cluster-Ready Mode
+End-to-end big data analytics project for NYC Yellow Taxi trips. The project
+builds an offline Spark pipeline, demand forecasting outputs, MongoDB serving
+tables, a FastAPI backend, and a Vue + D3 dashboard.
 
-This project is designed to run locally for development and on a Hadoop/Spark
-cluster for production-scale batch analytics.
+The online app does not run Spark jobs or train models. Heavy data processing is
+done offline first, then curated dashboard-ready tables are exported to MongoDB
+Atlas and served through the API.
 
-Local laptop mode remains the default:
+## Architecture
+
+```text
+TLC Yellow Taxi parquet files
+  -> ingestion
+  -> cleaning
+  -> feature engineering and spatial enrichment
+  -> analytics, map, route, and profile tables
+  -> forecasting
+  -> MongoDB export
+  -> FastAPI backend
+  -> Vue + Vite + D3 frontend
+```
+
+Main layers:
+
+| Layer | Location | Purpose |
+|---|---|---|
+| Data pipeline | `src/` | Spark and Python jobs that process raw taxi data |
+| Processed data | `data/processed/` | Local intermediate parquet and CSV artifacts |
+| Analytics outputs | `outputs/` | Final tables, figures, predictions, and models |
+| Serving export | `src/serving/` | Loads selected CSV outputs into MongoDB Atlas |
+| Backend | `backend/` | FastAPI service that reads MongoDB collections |
+| Frontend | `frontend/` | Vue dashboard that calls the backend API |
+
+## Repository Structure
+
+```text
+NYC-Taxi-Trip-Analytics/
+  config/
+    config.py                         Shared paths and Spark runtime settings
+
+  data/
+    raw/                              TLC Yellow Taxi parquet files
+    lookup/                           Taxi zone lookup table
+    taxi_zones/                       Taxi zone shapefile
+    processed/                        Generated local pipeline outputs
+
+  src/
+    ingestion/                        Raw data loading and schema validation
+    cleaning/                         Trip-level filtering and standardization
+    FeatureAndSpatial/                Feature tables and spatial enrichment
+    analytics/                        Temporal, route, map, and profile tables
+    forecasting/                      Training data, models, and evaluation
+    serving/                          MongoDB export script
+
+  backend/
+    app/                              FastAPI application and routers
+    requirements.txt                  Lightweight backend dependencies
+
+  frontend/
+    src/                              Vue application source
+    public/data/taxi_zones.geojson    Map geometry used by the frontend
+    package.json                      Frontend scripts and dependencies
+
+  scripts/
+    build_spark_package.ps1           Builds zip package for spark-submit
+
+  outputs/                            Generated analytics and model artifacts
+  render.yaml                         Render backend deployment config
+  requirements.txt                    Full local data pipeline dependencies
+```
+
+## Prerequisites
+
+- Python 3.11 recommended
+- Java runtime for PySpark
+- Node.js and npm for the frontend
+- MongoDB Atlas database for the served dashboard
+- Enough local disk and memory for the selected parquet data
+
+The root `requirements.txt` is for local data processing. The backend has a
+separate smaller dependency file at `backend/requirements.txt` for deployment.
+
+## Environment Setup
+
+From the project root:
+
+```powershell
+python -m venv venv
+venv\Scripts\python.exe -m pip install --upgrade pip
+venv\Scripts\pip.exe install -r requirements.txt
+```
+
+Install frontend dependencies:
+
+```powershell
+cd frontend
+npm install
+cd ..
+```
+
+Create a project-root `.env` file for MongoDB and backend CORS settings:
+
+```text
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster-url>/?retryWrites=true&w=majority
+MONGODB_DB=nyc_taxi_analytics
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+For local frontend development, `frontend/.env.example` shows the default API
+base:
+
+```text
+VITE_API_BASE=http://127.0.0.1:8001/api
+```
+
+## Data Inputs
+
+The project expects these source files:
+
+```text
+data/raw/yellow_tripdata_YYYY-MM.parquet
+data/lookup/taxi_zone_lookup.csv
+frontend/public/data/taxi_zones.geojson
+```
+
+The included `.gitignore` keeps generated folders out of git:
+
+```text
+data/processed/
+outputs/
+dist/
+frontend/node_modules/
+frontend/dist/
+venv/
+```
+
+Raw TLC data can be large. This repository is configured to keep selected
+2021-2024 Yellow Taxi parquet files while ignoring other raw files by default. Full raw data can be downloaded from the TLC website:
+
+```text
+https://www.nyc.gov/html/tlc/html/about/about_the_tlc_trip_data_page.shtml
+```
+
+## End-To-End Local Pipeline
+
+Run commands from the project root unless a command says otherwise.
+
+### 1. Ingestion
+
+```powershell
+venv\Scripts\python.exe src\ingestion\load_raw_data.py
+```
+
+Purpose:
+
+- Starts a Spark session.
+- Reads all raw Yellow Taxi parquet files from `data/raw/`.
+- Loads `data/lookup/taxi_zone_lookup.csv`.
+- Normalizes schema differences across monthly files.
+- Writes an ingestion summary.
+
+Main output:
+
+```text
+data/processed/ingestion/ingestion_summary.txt
+```
+
+### 2. Cleaning
+
+```powershell
+venv\Scripts\python.exe src\cleaning\clean_trips.py
+```
+
+Purpose:
+
+- Reuses the ingestion loader.
+- Filters invalid timestamps, unrealistic durations, fares, distances, passenger
+  counts, and invalid location IDs.
+- Produces a clean trip-level parquet dataset partitioned by year and month.
+
+Main outputs:
+
+```text
+data/processed/cleaned_trips/
+data/processed/cleaning/cleaning_report.txt
+```
+
+### 3. Feature Engineering And Spatial Enrichment
+
+```powershell
+venv\Scripts\python.exe src\FeatureAndSpatial\trip_enriched.py
+venv\Scripts\python.exe src\FeatureAndSpatial\zone_hour_features.py
+venv\Scripts\python.exe src\FeatureAndSpatial\zone_daily_features.py
+venv\Scripts\python.exe src\FeatureAndSpatial\borough_hour_features.py
+venv\Scripts\python.exe src\FeatureAndSpatial\top_routes.py
+```
+
+Purpose:
+
+- Joins cleaned trips with taxi zone lookup data.
+- Adds pickup/dropoff borough and zone names.
+- Adds time features such as year, month, date, weekday, weekend flag, and hour.
+- Builds zone-hour, zone-day, borough-hour, and route-level feature tables.
+
+Main outputs:
+
+```text
+data/processed/trip_enriched/
+data/processed/zone_hour_features/
+data/processed/zone_daily_features/
+data/processed/borough_hour_features/
+data/processed/top_routes/
+outputs/tables/*_csv/
+```
+
+Important tables:
+
+| Table | Grain | Main use |
+|---|---|---|
+| `trip_enriched` | One row per taxi trip | Reusable enriched trip-level table |
+| `zone_hour_features` | Pickup zone + date + hour | Core demand table for analytics and forecasting |
+| `zone_daily_features` | Pickup zone + date | Daily zone trend analysis |
+| `borough_hour_features` | Borough + hour | Borough-level demand pattern analysis |
+| `top_routes` | Pickup zone + dropoff zone | Route ranking and OD flow analysis |
+
+### 4. Analytics Tables
+
+Temporal analytics:
+
+```powershell
+venv\Scripts\python.exe src\analytics\temporal_analysis.py --write-csv
+```
+
+Enriched temporal analytics:
+
+```powershell
+venv\Scripts\python.exe src\analytics\temporal_analysis_enriched.py --write-csv
+```
+
+Trip and route analytics:
+
+```powershell
+venv\Scripts\python.exe src\analytics\trip_route_analysis.py --write-csv --top-n 500
+```
+
+Map flow analytics:
+
+```powershell
+venv\Scripts\python.exe src\analytics\zone_centroids.py
+venv\Scripts\python.exe src\analytics\map_flow_analysis.py --write-csv --flow-top-n 500
+```
+
+Zone and route profiles:
+
+```powershell
+venv\Scripts\python.exe src\analytics\profile_analysis.py --write-csv
+```
+
+Purpose:
+
+- Converts processed feature tables into dashboard-ready analytics tables.
+- Produces demand trends, heatmaps, route rankings, airport summaries, OD flows,
+  zone profiles, route profiles, and map support tables.
+- Writes parquet outputs and, with `--write-csv`, CSV outputs for MongoDB export.
+
+Main output areas:
+
+```text
+outputs/tables/temporal/
+outputs/tables/temporal_enriched/
+outputs/tables/trip_route_analytics/
+outputs/tables/map/
+outputs/tables/profiles/
+```
+
+### 5. Forecasting
+
+```powershell
+venv\Scripts\python.exe src\forecasting\prepare_training_data.py
+venv\Scripts\python.exe src\forecasting\train_model.py
+venv\Scripts\python.exe src\forecasting\evaluate_model.py
+venv\Scripts\python.exe src\forecasting\export_zone_hour_forecast.py
+```
+
+Purpose:
+
+- Reads `data/processed/zone_hour_features/`.
+- Builds lag and rolling demand features.
+- Splits training and evaluation data by time.
+- Trains Linear Regression, Random Forest, and Gradient Boosting models.
+- Selects the best model by validation RMSE.
+- Writes model metrics, prediction tables, plot data, figures, and a dashboard
+  forecast table.
+
+Main outputs:
+
+```text
+data/processed/forecasting/
+outputs/models/
+outputs/tables/model_comparison.csv
+outputs/tables/model_evaluation_metrics.csv
+outputs/predictions/
+outputs/figures/
+outputs/tables/forecast/csv/forecast_zone_hour.csv
+```
+
+### 6. Export Dashboard Tables To MongoDB
+
+Preview the export first:
+
+```powershell
+venv\Scripts\python.exe -m src.serving.export_analytics_to_mongodb --dry-run
+```
+
+Export the default dashboard tables:
+
+```powershell
+venv\Scripts\python.exe -m src.serving.export_analytics_to_mongodb
+```
+
+Export default plus optional Atlas-safe tables:
+
+```powershell
+venv\Scripts\python.exe -m src.serving.export_analytics_to_mongodb --include-optional
+```
+
+Purpose:
+
+- Reads selected CSV outputs from `outputs/`.
+- Converts CSV rows into MongoDB documents.
+- Replaces target dashboard collections.
+- Creates indexes used by API filters and route queries.
+
+This script intentionally avoids raw trip records and very large local-only
+tables. MongoDB should store curated dashboard aggregates, not the full taxi
+trip dataset.
+
+## Run The Application Locally
+
+Start the FastAPI backend:
+
+```powershell
+venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --port 8001
+```
+
+Open:
+
+```text
+http://127.0.0.1:8001/docs
+http://127.0.0.1:8001/health
+```
+
+Start the frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173
+```
+
+The frontend calls:
+
+```text
+http://127.0.0.1:8001/api
+```
+
+unless `VITE_API_BASE` is changed.
+
+## Backend API Overview
+
+The backend entry point is:
+
+```text
+backend/app/main.py
+```
+
+Routers:
+
+| Router | Prefix | Purpose |
+|---|---|---|
+| `meta.py` | `/api/meta` | Filter values and collection metadata |
+| `dashboard.py` | `/api/dashboard` | Overview and story endpoints |
+| `temporal.py` | `/api/temporal` | Time-based demand endpoints |
+| `spatial.py` | `/api/spatial` | Zone rankings and hotspot tables |
+| `routes.py` | `/api/routes` | Route, airport, and borough movement tables |
+| `map.py` | `/api/map` | OD flow data for map layers |
+| `profiles.py` | `/api/profiles` | Zone and route profile panels |
+| `business.py` | `/api/business` | Payment and trip behavior summaries |
+| `forecast.py` | `/api/forecast` | Forecast metrics and error views |
+
+Useful checks:
+
+```text
+GET /health
+GET /api/meta/filters
+GET /api/dashboard/overview
+GET /api/temporal/year-month-demand
+GET /api/spatial/top-zones
+GET /api/routes/top
+```
+
+## Frontend Overview
+
+The frontend is a Vue 3 app built with Vite and D3. Main files:
+
+```text
+frontend/src/App.vue
+frontend/src/api/client.js
+frontend/src/styles.css
+frontend/src/components/
+```
+
+Dashboard sections:
+
+| Section | Purpose |
+|---|---|
+| Command Center | KPI overview, insight banner, and map explorer |
+| Demand Patterns | Temporal charts, heatmaps, and trend views |
+| Zone Intelligence | Zone rankings and hotspot comparisons |
+| Route Network | OD flows, route rankings, airport routes, borough movement |
+| Forecast Lab | Model metrics, actual vs predicted charts, error analysis |
+| Data Tables | Tabular drill-down into analytical outputs |
+
+## Deployment
+
+The recommended deployment split is:
+
+```text
+Frontend: Vercel
+Backend: Render Web Service
+Database: MongoDB Atlas
+Data pipeline: local machine or external Spark cluster
+```
+
+Do not deploy generated data folders such as `data/processed/`, `outputs/`,
+`venv/`, or `frontend/node_modules/`.
+
+### Render Backend
+
+`render.yaml` defines a Python web service:
+
+```text
+Build Command: pip install -r backend/requirements.txt
+Start Command: python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+Health Check Path: /health
+```
+
+Required environment variables:
+
+```text
+MONGODB_URI=<MongoDB Atlas connection string>
+MONGODB_DB=nyc_taxi_analytics
+CORS_ORIGINS=https://your-vercel-app.vercel.app,http://localhost:5173,http://127.0.0.1:5173
+PYTHON_VERSION=3.11.9
+```
+
+Verify after deployment:
+
+```text
+https://your-render-service.onrender.com/health
+https://your-render-service.onrender.com/docs
+https://your-render-service.onrender.com/api/meta/filters
+```
+
+### Vercel Frontend
+
+Deploy only the `frontend/` directory.
+
+Suggested settings:
+
+```text
+Framework Preset: Vite
+Root Directory: frontend
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist
+```
+
+Required frontend environment variable:
+
+```text
+VITE_API_BASE=https://your-render-service.onrender.com/api
+```
+
+After Vercel is deployed, add the Vercel URL to Render's `CORS_ORIGINS` and
+redeploy the backend.
+
+## Scalable To Big Data
+
+This project is designed so the same logical pipeline can run on a laptop for
+development or on a Spark cluster for larger historical datasets. Scaling has
+two dimensions:
+
+- More storage and compute: move `DATA_ROOT` from local disk to HDFS or object
+  storage, then run the PySpark jobs with `spark-submit`.
+- More time coverage: add more monthly Yellow Taxi parquet files, then rerun the
+  generated pipeline stages.
+
+### Runtime And Storage Strategy
+
+Local mode is the default:
 
 ```powershell
 $env:SPARK_MASTER="local[*]"
-$env:DATA_ROOT="D:/NYUcourse/big data/test/NYC-Taxi-Trip-Analytics/data"
-python src/cleaning/clean_trips.py
+$env:DATA_ROOT="$PWD/data"
+venv\Scripts\python.exe src\cleaning\clean_trips.py
 ```
 
-Cluster mode uses the same PySpark jobs with external configuration:
+For cluster mode, use the same scripts with external paths and Spark settings:
 
 ```bash
 export SPARK_MASTER=yarn
@@ -22,7 +522,48 @@ export DATA_ROOT=hdfs:///user/nyc_taxi/data
 export SPARK_DRIVER_MEMORY=8g
 export SPARK_EXECUTOR_MEMORY=8g
 export SPARK_SQL_SHUFFLE_PARTITIONS=200
+```
 
+`DATA_ROOT` can point to local storage, HDFS, or object storage:
+
+```text
+<project-root>/data
+hdfs:///user/nyc_taxi/data
+s3a://nyc-taxi-data/data
+```
+
+The expected layout under any `DATA_ROOT` is:
+
+```text
+<DATA_ROOT>/
+  raw/
+    yellow_tripdata_YYYY-MM.parquet
+  lookup/
+    taxi_zone_lookup.csv
+  processed/
+```
+
+The ingestion code lists parquet files through local filesystem APIs in laptop
+mode and Hadoop FileSystem APIs in remote mode, so `hdfs://` and `s3a://` data
+roots can be used without changing the pipeline commands.
+
+`DATA_ROOT` controls only the project data tree: `raw/`, `lookup/`, and
+`processed/`. The final dashboard artifacts under `outputs/` are currently
+configured through `OUTPUTS_DIR` in `config/config.py`, which points to the
+project-root `outputs/` folder. MongoDB export therefore expects the generated
+CSV files to exist in the repo's local `outputs/` directory.
+
+### Running On A Spark Cluster
+
+Build the Python package zip from Windows PowerShell:
+
+```powershell
+.\scripts\build_spark_package.ps1
+```
+
+Example `spark-submit`:
+
+```bash
 spark-submit \
   --master yarn \
   --deploy-mode cluster \
@@ -33,1265 +574,143 @@ spark-submit \
   src/cleaning/clean_trips.py
 ```
 
-Build the zip used by `--py-files` from Windows PowerShell:
+Run each Spark pipeline stage in the same order as the local workflow. On a
+cluster, large processed parquet tables should stay under
+`<DATA_ROOT>/processed/`. If CSV-producing analytics jobs are also run on the
+cluster, copy the generated `outputs/` artifacts back to the repo before
+MongoDB export, or run the CSV-producing analytics/export steps on the same
+machine where the repo and `.env` file live.
+
+### Adding More Years Of Taxi Data
+
+Download additional official TLC Yellow Taxi parquet files from:
+
+```text
+https://www.nyc.gov/html/tlc/html/about/about_the_tlc_trip_data_page.shtml
+```
+
+Keep the original filename pattern:
+
+```text
+yellow_tripdata_YYYY-MM.parquet
+```
+
+For example:
+
+```text
+yellow_tripdata_2020-01.parquet
+yellow_tripdata_2020-02.parquet
+yellow_tripdata_2025-01.parquet
+```
+
+Place local files under:
+
+```text
+data/raw/
+```
+
+For cluster mode, upload them under:
+
+```text
+<DATA_ROOT>/raw/
+```
+
+Then validate the combined raw dataset before rebuilding:
 
 ```powershell
-.\scripts\build_spark_package.ps1
+venv\Scripts\python.exe src\ingestion\load_raw_data.py
 ```
 
-The data root is configurable through `DATA_ROOT`. For local development it
-points to the repository `data/` directory. In production it can point to HDFS
-or object storage such as:
+Check the summary:
 
 ```text
-hdfs:///user/nyc_taxi/data
-s3a://nyc-taxi-data/data
+data/processed/ingestion/ingestion_summary.txt
 ```
 
-The Spark ingestion layer supports both local file listing and Hadoop
-FileSystem listing for `hdfs://` / `s3a://` paths. Large processed tables are
-written as Parquet and partitioned by `year` and `month` where applicable, so
-the pipeline can scale by time partition instead of depending on one local
-machine and one flat directory.
-
-The production serving architecture intentionally keeps raw trip records and
-large processed Parquet tables out of MongoDB. MongoDB stores only curated,
-dashboard-ready aggregate tables. FastAPI and Vue serve those precomputed
-tables; they do not run Spark or model training in the web deployment.
-
-Kafka and Spark Streaming are not required for this project scope because the
-core problem is historical batch analytics and forecasting. They would be an
-optional extension for real-time trip ingestion or live hotspot monitoring.
-
-# File Structure
-```text
-project/
-  README.md
-
-  config/
-    config.py
-
-  data/
-    raw/
-      yellow_tripdata_2024-01.parquet
-      ...
-    lookup/
-      taxi_zone_lookup.csv
-    processed/
-
-  src/
-    ingestion/
-      load_raw_data.py
-    cleaning/
-      clean_trips.py
-    features/
-      build_zone_hour_features.py
-    analytics/
-      temporal_analysis.py
-      spatial_analysis.py
-      spatiotemporal_analysis.py
-    forecasting/
-      prepare_training_data.py
-      train_model.py
-      evaluate_model.py
-    visualization/
-      build_dashboard.py
-
-  outputs/
-    figures/
-    tables/
-    predictions/
-
-  documents/
-    final_report.docx
-    slides.pptx
-
-`config/:`
-Stores shared project configuration such as file paths, output locations, and commonly used column names.
-`data/raw/:`
-Stores the original NYC Yellow Taxi parquet files downloaded from the TLC Trip Record Data source.
-`data/lookup/:`
-Stores supporting reference data such as the Taxi Zone Lookup Table.
-`data/processed/:`
-Stores intermediate processed datasets generated by later stages of the pipeline, such as cleaned trip records, enriched trip data, and zone-hour aggregation tables.
-`src/ingestion/:`
-Contains scripts for loading raw input data into Spark and validating schemas.
-`src/cleaning/:`
-Contains scripts for data cleaning and standardization.
-`src/features/:`
-Contains scripts for feature engineering and construction of intermediate analytical tables.
-`src/analytics/:`
-Contains scripts for temporal, spatial, and spatiotemporal analysis.
-`src/forecasting/:`
-Contains scripts for preparing forecasting data, training models, and evaluating prediction results.
-`src/visualization/:`
-Contains scripts for generating visual outputs and dashboards.
-`outputs/: `
-Stores final generated figures, result tables, and prediction outputs.
-`documents/:`
-Stores final project deliverables such as the written report and presentation slides.
-```
-
-
-
-# Data Flow
+The ingestion layer reads monthly parquet files one by one, casts important
+columns to stable types, and unions schemas with missing columns allowed. This
+handles common TLC schema differences, including extra columns in newer files,
+as long as the core fields still exist:
 
 ```text
-data/raw/*.parquet
-        ↓
-src/ingestion/load_raw_data.py
-        ↓
-data/processed/ingestion/ingestion_summary.txt 
-        ↓
-src/cleaning/clean_trips.py
-        ↓
-data/processed/cleaned_trips/          
-        ↓
-src/features/build_zone_hour_features.py
-        ↓
-data/processed/zone_hour_features/    
-        ↓
-analytics / forecasting scripts
-```
-
-
-
-# Stage1 - Ingestion
-
-## 数据集包括：
-- Yellow Taxi Trip Records（PARQUET）<br>
-- Taxi Zone Lookup Table（CSV）<br>
-
-Yellow有上下车时间、位置、距离、费用、支付方式、乘客数这些字段；<br>
-lookup table 用来把 LocationID 映射到 zone 和 borough做空间分析（除了 lookup csv，如果想做地图热力图，官网也提供：Taxi Zone Shapefile）；<br><br>
-
-已下载2023-2024年24个月的 Yellow Taxi。代码跑通后可以继续扩展到2009-2024年。<br>
-2025 / 2026 数据没有加入，官方说明从 2025 起新增了 cbd_congestion_fee 列，会引入额外 schema 变化。<br>
-
-## 脚本 load_raw_data.py 主要做的是:
-1. 读取原始文件
-2. 验证 schema，处理跨月份 schema 不一致问题
-3. 输出 summary（Summary saved to:/NYC-Taxi-Trip-Analytics/data/processed/ingestion/ingestion_summary.txt）
-4. 提供稳定的 load_raw_trips() 读取函数
-
-## Schema Summary
-
-### 1. Raw Trip Dataset
-**Dataset Name:** Yellow Taxi Trip Records  
-**Source File:** `yellow_tripdata_2024-01.parquet/yellow_tripdata_2024-02.parquet/...`  
-
-The raw trip dataset contains detailed trip-level records for NYC Yellow Taxi services. Each row represents a single taxi trip and includes temporal, spatial, passenger, and fare-related information. This dataset serves as the primary input for the project and will later be used for data cleaning, feature engineering, demand analysis, hotspot detection, and short-term forecasting.
-
-#### Schema
-- `VendorID` — integer  
-- `tpep_pickup_datetime` — timestamp_ntz  
-- `tpep_dropoff_datetime` — timestamp_ntz  
-- `passenger_count` — long  
-- `trip_distance` — double  
-- `RatecodeID` — long  
-- `store_and_fwd_flag` — string  
-- `PULocationID` — integer  
-- `DOLocationID` — integer  
-- `payment_type` — long  
-- `fare_amount` — double  
-- `extra` — double  
-- `mta_tax` — double  
-- `tip_amount` — double  
-- `tolls_amount` — double  
-- `improvement_surcharge` — double  
-- `total_amount` — double  
-- `congestion_surcharge` — double  
-- `Airport_fee` — double  
-
-#### Most Relevant Fields for This Project
-- `tpep_pickup_datetime` and `tpep_dropoff_datetime` will be used to derive temporal features such as hour, date, weekday, and trip duration.
-- `PULocationID` and `DOLocationID` will be used for spatial analysis and for joining with the taxi zone reference table.
-- `trip_distance` will support trip-level and aggregated mobility analysis.
-- `fare_amount` and `total_amount` will support revenue-related analysis.
-- `passenger_count` will support trip behavior analysis.
-
-
-### 2. Taxi Zone Lookup Dataset
-
-**Dataset Name:** Taxi Zone Lookup Table  
-**Source File:** `taxi_zone_lookup.csv`  
-**Record Count:** 265 zone records.
-
-The Taxi Zone Lookup Table is a supporting reference dataset used to translate taxi location IDs into human-readable geographic information. It provides the mapping between `LocationID` values and corresponding borough and zone names. This table is essential for spatial aggregation, hotspot analysis, borough-level summaries, and map-based visualization.
-
-#### Schema
-- `LocationID` — integer  
-- `Borough` — string  
-- `Zone` — string  
-- `service_zone` — string  
-
-#### Purpose in This Project
-- Join with `PULocationID` and `DOLocationID` from the trip dataset
-- Convert numeric location identifiers into interpretable zone names
-- Support borough-level and zone-level analysis
-- Enable construction of intermediate analytical tables such as the zone-hour aggregation table
-- Improve interpretability of visualizations and final reporting
-
-### 3. Ingestion Validation Summary
-
-The ingestion stage has been successfully validated. The Spark environment can correctly load both the Yellow Taxi trip parquet file and the Taxi Zone Lookup CSV file. The schemas, record counts, and representative sample rows have been inspected, confirming that the input data is ready for the next project stage: **Cleaning and Standardization**.
-
-At this stage, the data ingestion layer has achieved the following:
-- verified successful loading of the raw trip dataset into Spark,
-- verified successful loading of the taxi zone reference table into Spark,
-- confirmed the availability of key temporal, spatial, and fare-related columns,
-- established the foundation for downstream cleaning, feature engineering, analysis, and forecasting tasks.
-
-
-# Stage2 - Cleaning
-
-
-
-
-
-# Stage 3 - Feature Engineering
-
-## 3.1 本层职责
-
-本阶段负责在清洗后的 taxi trip 数据基础上，进一步构造可用于分析、可视化和建模的标准中间表。
-
-主要包括：
-
-* 空间信息补充：通过 zone lookup 表补充 pickup / dropoff zone 与 borough 信息
-* 时间特征构造：提取 hour、date、weekday、weekend 等时间维度
-* Route 特征构造：生成 route_key 与 route_name
-* 多粒度聚合：构建 zone-hour、zone-day、borough-hour、route 等分析表
-* 输出标准中间表，供后续 analytics、visualization 和 forecasting 使用
-* 修改了load_raw_data中的creatsparksession 申明更多空间给spark使用
-
----
-
-## 3.2 数据处理 Pipeline
-
-### 完整执行顺序
-
-```text
-Step 1: Ingestion
-    python src/ingestion/load_raw_data.py
-
-Step 2: Cleaning
-    python src/cleaning/clean_trips.py
-
-Step 3: Feature Engineering
-    python src/FeaturesAndSpatial/trip_enriched.py
-    python src/FeaturesAndSpatial/zone_hour_features.py
-    python src/FeaturesAndSpatial/zone_daily_features.py
-    python src/FeaturesAndSpatial/borough_hour_features.py
-    python src/FeaturesAndSpatial/top_routes.py
-````
-
----
-
-## 3.3 输出数据表说明
-
-Stage 3 会生成以下标准中间表：
-
-| 表名                      | 粒度                  | 主要用途                                          |
-| ----------------------- | ------------------- | --------------------------------------------- |
-| `trip_enriched`         | 一行 = 一条 taxi trip   | 明细增强、空间补充、时间特征、route 构造                       |
-| `zone_hour_features`    | 一行 = zone + 日期 + 小时 | 核心分析表，可用于 analytics、forecasting、visualization |
-| `zone_daily_features`   | 一行 = zone + 日期      | 日趋势分析、day-level forecasting、dashboard         |
-| `borough_hour_features` | 一行 = borough + 小时   | 宏观趋势分析、borough-level dashboard                |
-| `top_routes`            | 一行 = 一条 route       | 热门路线分析、route-level summary                    |
-
----
-
-## 3.4 数据表字段说明
-
-### 3.4.1 `trip_enriched`：明细增强表
-
-#### 粒度
-
-**一行 = 一条 taxi trip**
-
-#### 作用
-
-`trip_enriched` 是在清洗后的 trip 明细数据基础上构造的增强表，主要用于提升数据可读性，并为后续聚合表提供统一输入。
-
-主要功能包括：
-
-* 补充 pickup / dropoff zone name
-* 补充 pickup / dropoff borough
-* 拆分时间特征
-* 构造 route 特征
-
-#### 原始字段
-
-| 字段                      | 含义            |
-| ----------------------- | ------------- |
-| `VendorID`              | 供应商           |
-| `tpep_pickup_datetime`  | 上车时间          |
-| `tpep_dropoff_datetime` | 下车时间          |
-| `trip_distance`         | 行驶距离，单位为 mile |
-| `fare_amount`           | 基础费用          |
-| `total_amount`          | 总费用           |
-| `passenger_count`       | 乘客数           |
-| `PULocationID`          | 上车区域 ID       |
-| `DOLocationID`          | 下车区域 ID       |
-
-#### 新增时间特征
-
-| 字段             | 含义         |
-| -------------- | ---------- |
-| `pickup_ts`    | 标准化后的上车时间戳 |
-| `pickup_date`  | 上车日期       |
-| `hour`         | 上车小时       |
-| `day_of_week`  | 星期，数值形式    |
-| `weekday_name` | 星期名称       |
-| `is_weekend`   | 是否为周末      |
-| `year_month`   | 年-月        |
-
-#### 新增空间特征
-
-| 字段                | 含义           |
-| ----------------- | ------------ |
-| `pickup_zone`     | 上车区域名称       |
-| `pickup_borough`  | 上车所属 borough |
-| `dropoff_zone`    | 下车区域名称       |
-| `dropoff_borough` | 下车所属 borough |
-
-#### 新增 route 特征
-
-| 字段           | 含义                                      |
-| ------------ | --------------------------------------- |
-| `route_key`  | 路线唯一标识，格式为 `PULocationID_DOLocationID`  |
-| `route_name` | 可读路线名称，格式为 `pickup_zone → dropoff_zone` |
-
----
-
-### 3.4.2 `zone_hour_features`：核心分析表
-
-#### 粒度
-
-**一行 = zone + 日期 + 小时**
-
-#### 为什么重要
-
-`zone_hour_features` 是本项目最核心的中间表之一。它将 trip-level 明细数据聚合到 zone-hour 粒度，可以作为以下任务的统一输入：
-
-* demand analytics
-* time-series forecasting
-* dashboard visualization
-* spatial-temporal pattern analysis
-
-#### 维度字段
-
-| 字段               | 含义           |
-| ---------------- | ------------ |
-| `PULocationID`   | 上车区域 ID      |
-| `pickup_zone`    | 上车区域名称       |
-| `pickup_borough` | 上车所属 borough |
-| `pickup_date`    | 上车日期         |
-| `hour`           | 上车小时         |
-
-#### 指标字段
-
-| 字段                      | 含义                     |
-| ----------------------- | ---------------------- |
-| `trip_count`            | 订单数，核心 demand 指标       |
-| `total_revenue`         | 总收入                    |
-| `avg_fare_amount`       | 平均基础费用                 |
-| `avg_trip_distance`     | 平均行驶距离                 |
-| `avg_trip_duration_min` | 平均行程时长，单位为分钟           |
-| `total_passenger_count` | 总乘客数                   |
-| `avg_speed_mph`         | 平均速度，单位为 mile per hour |
-
-#### 支付方式相关字段
-
-| 字段                       | 含义       |
-| ------------------------ | -------- |
-| `credit_card_trip_count` | 信用卡支付订单数 |
-| `cash_trip_count`        | 现金支付订单数  |
-| `credit_card_share`      | 信用卡支付占比  |
-| `cash_share`             | 现金支付占比   |
-
----
-
-### 3.4.3 `zone_daily_features`
-
-#### 粒度
-
-**一行 = zone + 日期**
-
-#### 来源
-
-`zone_daily_features` 由 `zone_hour_features` 进一步聚合得到。
-
-#### 用途
-
-该表适合用于更高层级的日趋势分析，例如：
-
-* daily demand trend analysis
-* day-level forecasting
-* dashboard summary
-* zone-level daily comparison
-
----
-
-### 3.4.4 `borough_hour_features`
-
-#### 粒度
-
-**一行 = borough + 小时**
-
-#### 用途
-
-`borough_hour_features` 用于观察 borough 层面的宏观出行模式，例如：
-
-* Manhattan vs Queens demand comparison
-* hourly demand pattern by borough
-* dashboard overview
-* city-level summary analysis
-
----
-
-### 3.4.5 `top_routes`
-
-#### 粒度
-
-**一行 = 一条 route**
-
-#### 用途
-
-`top_routes` 用于分析高频出行路线及其收入、距离和时长特征。
-
-#### 核心字段
-
-| 字段                      | 含义                 |
-| ----------------------- | ------------------ |
-| `route_key`             | 路线唯一标识             |
-| `route_name`            | 可读路线名称，格式为 `A → B` |
-| `trip_count`            | 订单数                |
-| `total_revenue`         | 总收入                |
-| `avg_trip_distance`     | 平均行驶距离             |
-| `avg_trip_duration_min` | 平均行程时长             |
-
----
-
-## 3.5 数据口径说明
-
-### 3.5.1 Demand 定义
-
-本项目中所有 demand 均定义为：
-
-> pickup demand
-
-也就是说，订单需求统一按照上车区域进行统计。
-
----
-
-### 3.5.2 收入口径
-
-`total_amount` 表示 NYC Taxi 原始记录中的总费用字段。
-
-需要注意：
-
-* `total_amount` 可用于分析 trip-level revenue pattern
-* 但它不完全等同于实际司机收入
-* 现金支付场景下 tip 信息可能不完整
-
----
-
-### 3.5.3 Payment Share 口径
-
-`credit_card_share` 和 `cash_share` 分别表示信用卡与现金支付订单占比。
-
-需要注意：
-
-* 二者之和不一定等于 1
-* 原因是原始数据中可能存在其他 payment type
-
----
-
-### 3.5.4 Speed 口径
-
-`avg_speed_mph` 的计算逻辑为：
-
-```text
-speed = trip_distance / trip_duration
-```
-
-该字段主要用于探索性分析，帮助识别异常速度、拥堵模式或区域差异，不直接代表官方交通速度指标。
-
-# Stage4 - Temporal + Analytics
-
-## 4.1 本层职责
-
-Stage 4 使用 Stage 3 生成的 `zone_hour_features` 表进行时间维度分析。  
-本阶段不直接读取 raw trip records，而是基于已经清洗、join zone lookup、并聚合到 zone-hour 粒度的中间表进行分析。
-
-核心目标：
-
-- 分析 24 小时出租车需求变化
-- 分析 weekday vs weekend 的需求差异
-- 分析 daily / monthly demand trend
-- 构建 weekday-hour heatmap 数据
-- 比较不同 borough 的 hourly demand pattern
-- 找出每个小时最忙的 pickup zones
-- 输出 parquet 格式的分析结果，供 visualization / report / forecasting 使用
-
-The main demand metric is:
-
-```text
-pickup demand = trip_count
-```
-
-This means demand is counted by pickup location and pickup time.
-
-## 2. Input Data
-
-Stage 4 reads the Stage 3 output table:
-
-```text
-data/processed/zone_hour_features/
-```
-
-This table is created by:
-
-```bash
-python src/FeatureAndSpatial/zone_hour_features.py
-```
-
-Each row in `zone_hour_features` represents one pickup zone during one date-hour time bucket.
-
-The expected grain is:
-
-```text
-pickup zone + pickup date + pickup hour
-```
-
-Important input columns include:
-
-| Column | Description |
-|---|---|
-| `PULocationID` | Pickup location ID |
-| `pickup_zone` | Human-readable pickup zone name |
-| `pickup_borough` | Pickup borough |
-| `pickup_date` | Pickup date |
-| `year` | Pickup year |
-| `month` | Pickup month |
-| `day` | Pickup day of month |
-| `year_month` | Year-month value |
-| `day_of_week` | Day of week |
-| `weekday_name` | Weekday name |
-| `is_weekend` | Weekend flag |
-| `hour` | Pickup hour |
-| `trip_count` | Number of trips |
-| `total_revenue` | Total revenue |
-| `total_fare_amount` | Total fare amount |
-| `total_trip_distance` | Total trip distance |
-| `total_trip_duration_min` | Total trip duration in minutes |
-| `total_passenger_count` | Total passenger count |
-| `credit_card_trip_count` | Number of credit card trips |
-| `cash_trip_count` | Number of cash trips |
-
-## 3. How to Run
-
-From the project root directory, run:
-
-```bash
-python src/analytics/temporal_analysis.py
-```
-
-This writes parquet outputs only.
-
-To also generate CSV outputs, run:
-
-```bash
-python src/analytics/temporal_analysis.py --write-csv
-```
-
-To change how many top zones are kept for each hour, use:
-
-```bash
-python src/analytics/temporal_analysis.py --write-csv --top-n 5
-```
-
-By default, `--top-n` is set to `10`.
-
-## 4. Output Locations
-
-Main output path:
-
-```text
-outputs/tables/temporal/parquet/
-```
-
-Optional CSV output path:
-
-```text
-outputs/tables/temporal/csv/
-```
-
-Spark writes parquet and CSV outputs as directories containing `part-*` files. This is expected behavior for Spark jobs.
-
-Example parquet output structure:
-
-```text
-outputs/tables/temporal/parquet/
-  kpi_summary/
-  hourly_demand/
-  daily_demand/
-  monthly_demand/
-  weekday_weekend_hourly/
-  weekday_hour_heatmap/
-  borough_hourly_pattern/
-  rush_hour_summary/
-  top_zones_by_hour/
-  top_zones_overall/
-```
-
-If `--write-csv` is used, the CSV folder will have the same table names:
-
-```text
-outputs/tables/temporal/csv/
-  kpi_summary/
-  hourly_demand/
-  daily_demand/
-  monthly_demand/
-  weekday_weekend_hourly/
-  weekday_hour_heatmap/
-  borough_hourly_pattern/
-  rush_hour_summary/
-  top_zones_by_hour/
-  top_zones_overall/
-```
-
-## 5. Output Tables
-
-### 5.1 `kpi_summary`
-
-One-row summary table for the full Stage 4 dataset.
-
-Purpose:
-
-- Provides a high-level overview of the analysis period.
-- Summarizes total demand, total revenue, active days, active pickup zones, and active boroughs.
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `total_trips` | Total number of pickup trips |
-| `total_revenue` | Total revenue |
-| `start_date` | Earliest pickup date |
-| `end_date` | Latest pickup date |
-| `active_days` | Number of unique pickup dates |
-| `active_pickup_zones` | Number of active pickup zones |
-| `active_boroughs` | Number of active pickup boroughs |
-| `avg_trips_per_day` | Average trips per active day |
-| `avg_revenue_per_day` | Average revenue per active day |
-
----
-
-### 5.2 `hourly_demand`
-
-One row represents one hour of the day.
-
-Purpose:
-
-- Shows the overall 24-hour taxi demand pattern.
-- Helps identify morning, afternoon, evening, night, and late-night demand changes.
-
-Grain:
-
-```text
-hour
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `hour` | Pickup hour, from 0 to 23 |
-| `total_trips` | Total trips during that hour |
-| `total_revenue` | Total revenue during that hour |
-| `avg_revenue_per_trip` | Average revenue per trip |
-| `avg_fare_amount` | Average fare amount |
-| `avg_trip_distance` | Average trip distance |
-| `avg_trip_duration_min` | Average trip duration in minutes |
-| `avg_passenger_count` | Average passenger count |
-| `credit_card_share` | Share of trips paid by credit card |
-| `cash_share` | Share of trips paid by cash |
-
----
-
-### 5.3 `daily_demand`
-
-One row represents one pickup date.
-
-Purpose:
-
-- Shows daily demand trend.
-- Helps identify high-demand days, low-demand days, and possible abnormal days.
-
-Grain:
-
-```text
-pickup_date
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `pickup_date` | Pickup date |
-| `year` | Year |
-| `month` | Month |
-| `day` | Day of month |
-| `day_of_week` | Day of week |
-| `weekday_name` | Weekday name |
-| `is_weekend` | Weekend flag |
-| `total_trips` | Total trips on that date |
-| `total_revenue` | Total revenue on that date |
-
----
-
-### 5.4 `monthly_demand`
-
-One row represents one year-month.
-
-Purpose:
-
-- Shows monthly taxi demand trend.
-- Supports simple seasonal or month-level comparison.
-
-Grain:
-
-```text
-year + month + year_month
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `year` | Year |
-| `month` | Month |
-| `year_month` | Year-month label |
-| `total_trips` | Total trips in the month |
-| `total_revenue` | Total revenue in the month |
-| `avg_revenue_per_trip` | Average revenue per trip |
-| `avg_trip_distance` | Average trip distance |
-| `avg_trip_duration_min` | Average trip duration in minutes |
-
----
-
-### 5.5 `weekday_weekend_hourly`
-
-One row represents one day type and one hour.
-
-Purpose:
-
-- Compares weekday and weekend hourly demand patterns.
-- Helps show whether weekday demand is more commute-driven and whether weekend demand has a different shape.
-
-Grain:
-
-```text
-day_type + hour
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `day_type` | `weekday` or `weekend` |
-| `is_weekend` | Weekend flag |
-| `hour` | Pickup hour |
-| `total_trips` | Total trips |
-| `total_revenue` | Total revenue |
-| `avg_revenue_per_trip` | Average revenue per trip |
-| `avg_trip_distance` | Average trip distance |
-| `avg_trip_duration_min` | Average trip duration in minutes |
-
----
-
-### 5.6 `weekday_hour_heatmap`
-
-One row represents one weekday and one hour.
-
-Purpose:
-
-- Provides a table ready for weekday-hour heatmap visualization.
-- Shows which weekday-hour combinations have the strongest demand.
-
-Grain:
-
-```text
-day_of_week + hour
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `day_of_week` | Numeric day of week |
-| `weekday_name` | Weekday name |
-| `hour` | Pickup hour |
-| `total_trips` | Total trips |
-| `total_revenue` | Total revenue |
-
-Recommended visualization:
-
-```text
-x-axis: hour
-y-axis: weekday_name
-color: total_trips
-```
-
----
-
-### 5.7 `borough_hourly_pattern`
-
-One row represents one pickup borough and one hour.
-
-Purpose:
-
-- Compares hourly demand patterns across boroughs.
-- Helps connect temporal demand with spatial location.
-
-Grain:
-
-```text
-pickup_borough + hour
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `pickup_borough` | Pickup borough |
-| `hour` | Pickup hour |
-| `total_trips` | Total trips |
-| `total_revenue` | Total revenue |
-| `avg_trip_distance` | Average trip distance |
-| `avg_trip_duration_min` | Average trip duration in minutes |
-
----
-
-### 5.8 `rush_hour_summary`
-
-One row represents one manually defined time period.
-
-Purpose:
-
-- Summarizes demand by business-friendly time periods.
-- Useful for presentation and report writing.
-
-Time period definitions:
-
-| Time Period | Hour Range |
-|---|---|
-| `late_night_00_05` | 00:00 - 05:59 |
-| `morning_peak_06_10` | 06:00 - 10:59 |
-| `midday_11_15` | 11:00 - 15:59 |
-| `evening_peak_16_19` | 16:00 - 19:59 |
-| `night_20_23` | 20:00 - 23:59 |
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `time_period_order` | Sort order for the time period |
-| `time_period` | Time period label |
-| `total_trips` | Total trips |
-| `total_revenue` | Total revenue |
-| `avg_revenue_per_trip` | Average revenue per trip |
-| `avg_trip_distance` | Average trip distance |
-| `avg_trip_duration_min` | Average trip duration in minutes |
-
----
-
-### 5.9 `top_zones_by_hour`
-
-One row represents one top pickup zone within one hour.
-
-Purpose:
-
-- Finds the busiest pickup zones for each hour of the day.
-- Connects temporal analytics with spatial hotspot analysis.
-- Useful for identifying how demand hotspots change across the day.
-
-Grain:
-
-```text
-hour + pickup zone
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `hour` | Pickup hour |
-| `PULocationID` | Pickup location ID |
-| `pickup_zone` | Pickup zone name |
-| `pickup_borough` | Pickup borough |
-| `zone_rank_in_hour` | Rank within that hour |
-| `total_trips` | Total trips |
-| `total_revenue` | Total revenue |
-
-By default, this table keeps the top 10 zones per hour. This can be changed with:
-
-```bash
-python src/analytics/temporal_analysis.py --top-n 5
-```
-
----
-
-### 5.10 `top_zones_overall`
-
-One row represents one top pickup zone across the full dataset.
-
-Purpose:
-
-- Identifies the strongest pickup zones overall.
-- Useful for summary slides and final report.
-
-Grain:
-
-```text
-pickup zone
-```
-
-Main columns:
-
-| Column | Description |
-|---|---|
-| `PULocationID` | Pickup location ID |
-| `pickup_zone` | Pickup zone name |
-| `pickup_borough` | Pickup borough |
-| `total_trips` | Total trips |
-| `total_revenue` | Total revenue |
-| `avg_revenue_per_trip` | Average revenue per trip |
-| `avg_trip_distance` | Average trip distance |
-| `avg_trip_duration_min` | Average trip duration in minutes |
-
-## 6. Notes on Average Metrics
-
-The Stage 3 `zone_hour_features` table is already aggregated. Therefore, Stage 4 does not take a plain average of existing average columns.
-
-Instead, Stage 4 recomputes average metrics from total columns when possible.
-
-Examples:
-
-```text
-avg_revenue_per_trip = total_revenue / total_trips
-avg_fare_amount = total_fare_amount / total_trips
-avg_trip_distance = total_trip_distance / total_trips
-avg_trip_duration_min = total_trip_duration_min / total_trips
-avg_passenger_count = total_passenger_count / total_trips
-```
-
-This avoids incorrect results caused by averaging already-aggregated averages.
-
-## 7. Expected Use in Final Report and Presentation
-
-Recommended tables for presentation:
-
-| Output Table | Suggested Use |
-|---|---|
-| `hourly_demand` | Line chart showing 24-hour demand pattern |
-| `weekday_weekend_hourly` | Line chart comparing weekday vs weekend demand |
-| `weekday_hour_heatmap` | Heatmap showing demand by weekday and hour |
-| `borough_hourly_pattern` | Multi-line chart comparing boroughs |
-| `rush_hour_summary` | Bar chart comparing major time periods |
-| `top_zones_by_hour` | Table or chart showing hourly hotspot changes |
-
-Recommended figures:
-
-- Hourly demand line chart
-- Weekday vs weekend hourly demand chart
-- Weekday-hour heatmap
-- Borough hourly demand comparison
-- Rush hour summary bar chart
-- Top pickup zones by hour
-
-
-# Stage5 - Forecasting
-
-## 5.1 本层职责
-
-本阶段负责完成 NYC Taxi demand forecasting，预测不同 pickup zone 在不同日期、不同时段的出租车需求量。
-
-预测粒度：
-
-```text
-pickup zone + date + hour
-```
-
-预测目标：
-
-```text
-trip_count
-```
-
----
-
-## 5.2 提交文件说明
-
-本阶段上传到 GitHub 的文件只有：
-
-```text
-src/forecasting/prepare_training_data.py
-src/forecasting/train_model.py
-src/forecasting/evaluate_model.py
-
-outputs/figures/actual_vs_predicted_scatter.png
-outputs/figures/actual_vs_predicted_monthly_curve.png
-outputs/figures/prediction_error_distribution.png
-outputs/figures/model_comparison.png
-```
-
-不上传 CSV 文件和模型文件，因为文件较大或可由脚本重新生成。
-
----
-
-## 5.3 输入数据
-
-本阶段依赖 Part 3 输出：
-
-```text
-data/processed/zone_hour_features/
-```
-
-该表是一行一个：
-
-```text
-pickup zone + pickup date + hour
-```
-
-主要使用字段包括：
-
-```text
+tpep_pickup_datetime
+tpep_dropoff_datetime
 PULocationID
-pickup_zone
-pickup_borough
-pickup_date
-year
-month
-day
-day_of_week
-is_weekend
-hour
-trip_count
-avg_trip_distance
-avg_trip_duration_min
-avg_fare_amount
-avg_total_amount
-avg_passenger_count
-avg_speed_mph
-credit_card_share
-cash_share
+DOLocationID
+trip_distance
+fare_amount
+total_amount
+passenger_count
+payment_type
 ```
 
----
+### Code Notes For Extending Years
 
-## 5.4 依赖库
+Most analytics and API code is already year-dynamic. The temporal, route, map,
+profile, MongoDB export, and backend filter endpoints group or filter by the
+`year` values produced by the data, so they do not need code changes just
+because a new year is present.
 
-```bash
-pip install pyspark pandas numpy scikit-learn matplotlib joblib
+These places should be adjusted before expanding outside 2021-2024:
+
+| Area | File | Current behavior | Suggested change |
+|---|---|---|---|
+| Cleaning date window | `src/cleaning/clean_trips.py` | `remove_out_of_target_date_range()` keeps pickups from `2021-01-01` to before `2025-01-01`, so 2020 or 2025+ data would be filtered out. | Update the start and end bounds to match the intended analysis period. If the project will keep expanding, move the bounds into constants or environment variables so the date window is easy to change. |
+| Forecast split | `src/forecasting/prepare_training_data.py` | `FULL_*`, `TRAIN_*`, and `EVAL_*` dates are hardcoded for 2021-2024, with 2024 as evaluation. | Choose the new modeling design explicitly. For example, after adding 2025 data, train on 2021-2024 and evaluate on 2025, or use a wider training window and reserve only the newest period as the test set. Also update the printed split message. |
+| Forecast metadata | `backend/app/routers/forecast.py` | The response metadata currently reports `evaluation_year=2024`. | Update this value when the evaluation period changes, or derive it from the exported forecast rows so API metadata stays consistent with model outputs. |
+
+Recommended update flow:
+
+- First update the cleaning date window, then rerun ingestion and cleaning to
+  confirm the new years are present in `data/processed/cleaned_trips/`.
+- Next rerun feature engineering and analytics; these stages should pick up the
+  new `year` values automatically.
+- If forecasting is included, update the train/evaluation dates before running
+  `prepare_training_data.py`, then check `train_eval_split_info.csv`.
+- Finally update backend forecast metadata to match the new evaluation period.
+
+### Rebuilding After Scaling
+
+After adding years in local mode, rerun generated stages in order:
+
+```powershell
+venv\Scripts\python.exe src\cleaning\clean_trips.py
+venv\Scripts\python.exe src\FeatureAndSpatial\trip_enriched.py
+venv\Scripts\python.exe src\FeatureAndSpatial\zone_hour_features.py
+venv\Scripts\python.exe src\FeatureAndSpatial\zone_daily_features.py
+venv\Scripts\python.exe src\FeatureAndSpatial\borough_hour_features.py
+venv\Scripts\python.exe src\FeatureAndSpatial\top_routes.py
+venv\Scripts\python.exe src\analytics\temporal_analysis.py --write-csv
+venv\Scripts\python.exe src\analytics\temporal_analysis_enriched.py --write-csv
+venv\Scripts\python.exe src\analytics\trip_route_analysis.py --write-csv --top-n 500
+venv\Scripts\python.exe src\analytics\zone_centroids.py
+venv\Scripts\python.exe src\analytics\map_flow_analysis.py --write-csv --flow-top-n 500
+venv\Scripts\python.exe src\analytics\profile_analysis.py --write-csv
 ```
 
----
+For cluster mode, submit the same Spark stages in the same order with
+`spark-submit`, using the cluster environment variables shown above. The script
+order stays the same; the execution command changes from local
+`venv\Scripts\python.exe ...` to cluster `spark-submit ... <script.py>`.
 
-## 5.5 运行顺序
+If the dashboard should include updated forecast outputs, rerun forecasting too:
 
-```bash
-python src/forecasting/prepare_training_data.py
-python src/forecasting/train_model.py
-python src/forecasting/evaluate_model.py
+```powershell
+venv\Scripts\python.exe src\forecasting\prepare_training_data.py
+venv\Scripts\python.exe src\forecasting\train_model.py
+venv\Scripts\python.exe src\forecasting\evaluate_model.py
+venv\Scripts\python.exe src\forecasting\export_zone_hour_forecast.py
 ```
 
----
+After dashboard CSV files are available in the local repo's `outputs/` folder,
+preview the MongoDB export:
 
-## 5.6 脚本功能
-
-### prepare_training_data.py
-
-功能：
-
-```text
-1. 读取 data/processed/zone_hour_features/
-2. 构造 lag 和 rolling 特征
-3. 随机划分 80% training set 和 20% evaluation set
-4. 输出机器学习可用 CSV
+```powershell
+venv\Scripts\python.exe -m src.serving.export_analytics_to_mongodb --dry-run
 ```
 
-生成但不上传：
+Then export:
 
-```text
-data/processed/forecasting/training_data_full.csv
-data/processed/forecasting/training_data_train.csv
-data/processed/forecasting/training_data_eval.csv
-data/processed/forecasting/train_eval_split_info.csv
+```powershell
+venv\Scripts\python.exe -m src.serving.export_analytics_to_mongodb --include-optional
 ```
-
----
-
-### train_model.py
-
-功能：
-
-```text
-1. 读取 training_data_train.csv
-2. 训练 Linear Regression、Random Forest、Gradient Boosting
-3. 比较 MAE、RMSE、R2
-4. 自动选择 RMSE 最低的模型
-5. 保存模型文件
-```
-
-生成但不上传：
-
-```text
-outputs/models/linear_regression_model.pkl
-outputs/models/random_forest_model.pkl
-outputs/models/gradient_boosting_model.pkl
-outputs/models/best_model.pkl
-outputs/tables/model_comparison.csv
-```
-
----
-
-### evaluate_model.py
-
-功能：
-
-```text
-1. 读取 training_data_eval.csv
-2. 加载已训练模型
-3. 在 evaluation set 上预测
-4. 输出最终 metrics
-5. 输出 prediction table
-6. 输出图片
-7. 输出给 Part 6 使用的 CSV
-```
-
-生成但不上传：
-
-```text
-outputs/tables/model_evaluation_metrics.csv
-outputs/predictions/forecast_predictions.csv
-outputs/predictions/plot_actual_vs_predicted_hourly.csv
-outputs/predictions/plot_actual_vs_predicted_monthly.csv
-outputs/predictions/plot_error_distribution.csv
-outputs/predictions/plot_model_comparison.csv
-```
-
----
-
-## 5.7 Part 6 需要使用的 CSV
-
-Part 6 如果需要重新绘图、调整 dashboard 样式，或展示预测结果表，直接使用以下文件：
-
-```text
-outputs/predictions/forecast_predictions.csv
-```
-
-用途：完整的 zone-hour 预测结果表，包含每条记录的真实 demand、预测 demand、prediction error 和 absolute error。适合 Part 6 做预测结果表格、筛选、地图或 dashboard 明细展示。
-
-```text
-outputs/predictions/plot_actual_vs_predicted_hourly.csv
-```
-
-用途：zone-hour 粒度的 actual vs predicted demand，可用于绘制 hourly actual vs predicted 图。
-
-```text
-outputs/predictions/plot_actual_vs_predicted_monthly.csv
-```
-
-用途：按月份聚合后的 actual vs predicted demand trend，可用于绘制 monthly trend 图。
-
-```text
-outputs/predictions/plot_error_distribution.csv
-```
-
-用途：prediction error distribution，可用于绘制误差分布图。
-
-```text
-outputs/predictions/plot_model_comparison.csv
-```
-
-用途：三个模型的 MAE、RMSE、R2 对比，可用于绘制模型比较图。
-
----
-
-## 5.8 模型说明
-
-本阶段使用三个 sklearn 回归模型：
-
-```text
-Linear Regression
-Random Forest Regressor
-Gradient Boosting Regressor
-```
-
-最佳模型选择标准：
-
-```text
-RMSE 最低
-```
-
-通常 Random Forest 表现最好，因为 taxi demand 与时间、区域、历史需求之间存在非线性关系。
-
----
-
-## 5.9 图片输出
-
-上传到 GitHub 的图片包括：
-
-```text
-outputs/figures/actual_vs_predicted_scatter.png
-```
-
-真实值与预测值散点图。
-
-```text
-outputs/figures/actual_vs_predicted_monthly_curve.png
-```
-
-按月份聚合后的 actual vs predicted demand 趋势图。
-
-```text
-outputs/figures/prediction_error_distribution.png
-```
-
-预测误差分布图。
-
-```text
-outputs/figures/model_comparison.png
-```
-
-三个模型的 RMSE 对比图。
-
-
-# Stage6 - Visualization
-
-Stage 6 is implemented under `src/visualization/`.
-
-It builds a D3 dashboard from the Stage 4 CSV outputs and the Stage 3 top-routes
-sample table. Stage 5 forecasting output is optional for now; when it is ready,
-place a forecast CSV under `outputs/predictions/forecast_demand.csv` with:
-
-```text
-pickup_date,hour,pickup_zone,actual_trip_count,predicted_trip_count
-```
-
-Run from the project root:
-
-```bash
-python src/visualization/prepare_dashboard_data.py
-python -m http.server 8000 --directory src/visualization/dashboard
-```
-
-Open:
-
-```text
-http://localhost:8000/
-```
-

@@ -207,8 +207,6 @@ def export_sample_csv(zone_hour_df: DataFrame) -> None:
     Export a small human-readable sample CSV for teammates / quick inspection.
     """
     try:
-        import pandas as pd
-
         TABLES_DIR.mkdir(parents=True, exist_ok=True)
 
         sample_pdf = (
@@ -217,8 +215,6 @@ def export_sample_csv(zone_hour_df: DataFrame) -> None:
             .limit(100)
             .toPandas()
         )
-
-        # 让 sample 更好读
         float_cols = [
             "avg_trip_distance",
             "total_trip_distance",
@@ -255,10 +251,6 @@ def export_sample_csv(zone_hour_df: DataFrame) -> None:
 def export_full_csv(zone_hour_df: DataFrame) -> None:
     """
     Export the full zone_hour_features table as CSV for D3 / frontend use.
-
-    Note:
-    Spark writes CSV as a directory containing part-*.csv files,
-    not as a single CSV file by default.
     """
     csv_output_path = TABLES_DIR / "zone_hour_features_csv"
 
